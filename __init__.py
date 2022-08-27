@@ -28,22 +28,26 @@ except ModuleNotFoundError:
 
 Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[0]
 
-file = Path() / "data" / "flash" / "flash_url.json"
+path = Path() / "data" / "flash"
 
-if file.exists():
-    with open(file, "r", encoding="utf8") as f:
+flash_url_file = Path(path) / "flash_url.json"
+config_file = Path(path) / "config.json"
+
+if path.exists():
+    pass
+else:
+    path.mkdir(parents=True, exist_ok=True)
+
+if flash_url_file.exists():
+    with open(flash_url_file, "r", encoding="utf8") as f:
         flash_url = json.load(f)
 else:
-    file.parent.mkdir(parents=True, exist_ok=True)
     flash_url = {}
-
-config_file = Path() / "data" / "flash" / "config.json"
 
 if config_file.exists():
     with open(config_file, "r", encoding="utf8") as f:
         config = json.load(f)
 else:
-    config_file.parent.mkdir(parents=True, exist_ok=True)
     config = {
         "max":20,
         "count":5,
@@ -68,12 +72,12 @@ async def _(event: GroupMessageEvent):
     comment = str(re.compile(r'file=(.*?).image',re.S).findall(msg))
     comment = str(re.sub("[^0-9A-Za-z\u4e00-\u9fa5]", '', comment.upper()))
     url = ('https://gchat.qpic.cn/gchatpic_new/' + event.get_user_id() + '/2640570090-2264725042-' + comment + '/0?term=3')
-    global flash_url, config, file
+    global flash_url, config, flash_url_file
     flash_url.setdefault(group_id,[])
     flash_url[group_id].append(url)
     while len(flash_url[group_id]) > config["max"]:
         del flash_url[group_id][0]
-    with open(file, "w", encoding="utf8") as f:
+    with open(flash_url_file, "w", encoding="utf8") as f:
         json.dump(flash_url, f, ensure_ascii=False, indent=4)
 
 
