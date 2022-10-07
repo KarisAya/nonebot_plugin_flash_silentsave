@@ -172,9 +172,9 @@ async def _(event: MessageEvent,arg: Message = CommandArg()):
         config["count"] = msg if 1 <= msg <= 20 else 5
         with open(config_file, "w", encoding="utf8") as f:
             json.dump(config, f, ensure_ascii=False, indent=4)
-        await set_config_max.finish(f'闪照显示数量已设置成{config["count"]}')
+        await set_config_count.finish(f'闪照显示数量已设置成{config["count"]}')
     except Exception as error:
-        await set_config_max.finish(str(error))
+        await set_config_count.finish(str(error))
 
 def get_message_at(data: str) -> list:
     qq_list = []
@@ -188,9 +188,9 @@ def get_message_at(data: str) -> list:
         return []
 
 # 添加闪照管理员
-set_config_count = on_command("添加闪照管理员", permission = SUPERUSER, priority = 20, block = True)
+add_CUSTOMER = on_command("添加闪照管理员", permission = SUPERUSER, priority = 20, block = True)
 
-@set_config_count.handle()
+@add_CUSTOMER.handle()
 async def _(event: GroupMessageEvent):
     at = get_message_at(event.json())
     global config
@@ -199,14 +199,14 @@ async def _(event: GroupMessageEvent):
         config["CUSTOMER"] = list(set(config["CUSTOMER"]) | set(at))
         with open(config_file, "w", encoding="utf8") as f:
             json.dump(config, f, ensure_ascii=False, indent=4)
-        await set_config_max.finish("添加成功")
+        await add_CUSTOMER.finish("添加成功")
     except Exception as error:
-        await set_config_max.finish(str(error))
+        await add_CUSTOMER.finish(str(error))
 
 # 删除闪照管理员
-set_config_count = on_command("删除闪照管理员", permission = SUPERUSER, priority = 20, block = True)
+del_CUSTOMER = on_command("删除闪照管理员", permission = SUPERUSER, priority = 20, block = True)
 
-@set_config_count.handle()
+@del_CUSTOMER.handle()
 async def _(event: GroupMessageEvent):
     at = get_message_at(event.json())
     global config
@@ -215,11 +215,11 @@ async def _(event: GroupMessageEvent):
         config["CUSTOMER"] = list(set(config["CUSTOMER"]) - set(at))
         with open(config_file, "w", encoding="utf8") as f:
             json.dump(config, f, ensure_ascii=False, indent=4)
-        await set_config_max.finish("删除成功")
+        await del_CUSTOMER.finish("删除成功")
     except Exception as error:
-        await set_config_max.finish(str(error))
+        await del_CUSTOMER.finish(str(error))
 
-clean = on_command("清理闪照", aliases = {"清理失效闪照"}, permission = SUPERUSER, priority = 20, block = True)
+clean = on_command("清理闪照", aliases = {"清理失效闪照","清除失效闪照"}, permission = SUPERUSER, priority = 20, block = True)
 @clean.handle()
 @scheduler.scheduled_job("cron",hour = 0)
 def _():
