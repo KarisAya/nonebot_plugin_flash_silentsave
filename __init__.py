@@ -17,20 +17,28 @@ from nonebot.permission import SUPERUSER
 from nonebot.params import CommandArg, Arg
 from pathlib import Path
 
+import nonebot
 import os
 import re
-import nonebot
+import time
 
 try:
     import ujson as json
 except ModuleNotFoundError:
     import json
 
+import requests
+
+from nonebot import require
+
+scheduler = require("nonebot_plugin_apscheduler").scheduler
+
 Bot_NICKNAME: str = list(nonebot.get_driver().config.nickname)[0]
 
 path = Path() / "data" / "flash"
 
 flash_url_file = Path(path) / "flash_url.json"
+group_namelist_file = Path(path) / "group_namelist.json"
 config_file = Path(path) / "config.json"
 
 if path.exists():
@@ -44,12 +52,17 @@ if flash_url_file.exists():
 else:
     flash_url = {}
 
+if group_namelist_file.exists():
+    with open(group_namelist_file, "r", encoding="utf8") as f:
+        group_namelist = json.load(f)
+else:
+    group_namelist = {}
+
 if config_file.exists():
     with open(config_file, "r", encoding="utf8") as f:
         config = json.load(f)
 else:
     config = {
-        "max":20,
         "count":5,
         "CUSTOMER": []
         }
@@ -72,14 +85,12 @@ async def _(event: GroupMessageEvent):
     comment = str(re.compile(r'file=(.*?).image',re.S).findall(msg))
     comment = str(re.sub("[^0-9A-Za-z\u4e00-\u9fa5]", '', comment.upper()))
     url = ('https://gchat.qpic.cn/gchatpic_new/' + event.get_user_id() + '/2640570090-2264725042-' + comment + '/0?term=3')
-    global flash_url, config, flash_url_file
+    global flash_url, flash_url_file
     flash_url.setdefault(group_id,[])
     flash_url[group_id].append(url)
-    while len(flash_url[group_id]) > config["max"]:
-        del flash_url[group_id][0]
+
     with open(flash_url_file, "w", encoding="utf8") as f:
         json.dump(flash_url, f, ensure_ascii=False, indent=4)
-
 
 # 查看闪照
 flashimg = on_command("查看闪照", permission = SUPERUSER | GROUP_ADMIN | GROUP_OWNER | CUSTOMER, priority = 20, block = True)
@@ -109,15 +120,32 @@ async def _(bot:Bot ,event: MessageEvent):
         else:
             await flashimg.finish("无本群闪照记录")
     else:
+        global group_namelist
         msg = ""
+        Now = time.time()
+        flag = 0
         for i in flash_url.keys():
-            info = await bot.get_group_info(group_id = int(i))
-            msg += f'{info["group_name"]}【{i}】\n'
-        else:
-            if msg:
-                await flashimg.send("请选择你要查看的群号：\n" + msg[:-1])
+            if i in group_namelist.keys() and group_namelist[i][1] + 604800 > Now:
+                group_name = group_namelist[i][0]
             else:
-                await flashimg.finish("无闪照记录")
+                flag = 1
+                try:
+                    info = await bot.get_group_info(group_id = int(i))
+                    group_name = info["group_name"]
+                except:
+                    group_name = "群名获取失败"
+                group_namelist.update({i:[group_name,Now]})
+            msg += f'{group_name}【{i}】\n'
+        else:
+            if flag == 1:
+                with open(group_namelist_file, "w", encoding="utf8") as f:
+                    json.dump(group_namelist, f, ensure_ascii=False, indent=4)
+            else:
+                pass
+        if msg:
+            await flashimg.send("请选择你要查看的群号：\n" + msg[:-1])
+        else:
+            await flashimg.finish("无闪照记录")
 
 @flashimg.got("group_id")
 async def _(group_id: Message = Arg()):
@@ -132,21 +160,6 @@ async def _(group_id: Message = Arg()):
             await flashimg.finish(msg)
     else:
         await flashimg.finish(f"群号【{group_id}】未记录")
-
-# 设置闪照储存数量
-set_config_max = on_command("设置闪照储存数量", permission = SUPERUSER, priority = 20, block = True)
-
-@set_config_max.handle()
-async def _(bot:Bot ,event: MessageEvent,arg: Message = CommandArg()):
-    global config
-    try:
-        msg = int(arg.extract_plain_text().strip())
-        config["max"] = msg if 5 <= msg <= 100 else 20
-        with open(config_file, "w", encoding="utf8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=4)
-        await set_config_max.finish(f'闪照储存数量已设置成{config["max"]}')
-    except Exception as error:
-        await set_config_max.finish(str(error))
 
 # 设置闪照显示数量
 set_config_count = on_command("设置闪照发送数量" ,aliases = {"设置闪照显示数量"}, permission = SUPERUSER, priority = 20, block = True)
@@ -205,3 +218,31 @@ async def _(event: GroupMessageEvent):
         await set_config_max.finish("删除成功")
     except Exception as error:
         await set_config_max.finish(str(error))
+
+clean = on_command("清理闪照", aliases = {"清理失效闪照"}, permission = SUPERUSER, priority = 20, block = True)
+@clean.handle()
+@scheduler.scheduled_job("cron",hour = 0)
+def _():
+    global flash_url, flash_url_file
+    nonebot.logger.info("正在清理失效url...")
+    requests.packages.urllib3.disable_warnings()
+    for group_id in flash_url.keys():
+        for url in flash_url[group_id]:
+            try:
+                resp = requests.get(url, verify=False, allow_redirects=True, timeout=5)
+                if resp.status_code != 200:
+                    nonebot.logger.info(f"{url}已失效")
+                    flash_url[group_id].remove(url)
+            except requests.RequestException as e:
+                nonebot.logger.warning(e)
+                continue
+
+    New_flash_url = {}
+    for group_id in flash_url.keys():
+        if flash_url[group_id]:
+            New_flash_url[group_id] = flash_url[group_id]
+    else:
+        flash_url = New_flash_url
+    nonebot.logger.success("清理完成！")
+    with open(flash_url_file, "w", encoding="utf8") as f:
+        json.dump(flash_url, f, ensure_ascii=False, indent=4)
